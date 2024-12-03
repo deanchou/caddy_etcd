@@ -26,7 +26,7 @@ type EtcdProxy struct {
 // CaddyModule returns the Caddy module information.
 func (EtcdProxy) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.reverse_proxy.etcd",
+		ID:  "http.reverse_proxy.upstreams.etcd",
 		New: func() caddy.Module { return new(EtcdProxy) },
 	}
 }
