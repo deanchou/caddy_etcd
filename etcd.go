@@ -3,6 +3,7 @@ package caddy_etcd
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -63,8 +64,10 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 	for _, kv := range resp.Kvs {
 		endpoints := gjson.GetBytes(kv.Value, "endpoints").Array()
 		for _, endpoint := range endpoints {
+			dial := endpoint.String()
+			dial = dial[strings.Index(dial, "://")+3:]
 			upstreams = append(upstreams, &reverseproxy.Upstream{
-				Dial: endpoint.String(),
+				Dial: dial,
 			})
 		}
 	}
