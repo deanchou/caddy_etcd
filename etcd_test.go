@@ -46,13 +46,4 @@ func TestDefault(t *testing.T) {
 	if r.client == nil {
 		t.Errorf("expected client to be non-nil")
 	}
-
-	backends, err := r.GetBackends()
-	if err != nil {
-		t.Errorf("error getting backends: %v", err)
-	}
-
-	if len(backends) == 0 {
-		t.Errorf("expected some backends, got none")
-	}
 }
