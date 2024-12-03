@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -19,10 +20,12 @@ func init() {
 
 // EtcdProxy is a Caddy module that integrates etcd with reverse_proxy.
 type EtcdProxy struct {
-	Endpoints []string `json:"endpoints,omitempty"`
-	Key       string   `json:"key,omitempty"`
-	client    *clientV3.Client
+	Endpoints []string       `json:"endpoints,omitempty"`
+	Key       string         `json:"key,omitempty"`
+	Version   string         `json:"version,omitempty"`
+	Timeout   caddy.Duration `json:"timeout,omitempty"`
 
+	client *clientV3.Client
 	ctx    caddy.Context
 	logger *zap.Logger
 }
@@ -41,27 +44,41 @@ func (ep *EtcdProxy) Provision(ctx caddy.Context) error {
 	ep.logger = ctx.Logger(ep)
 
 	cli, err := clientV3.New(clientV3.Config{
-		Endpoints: ep.Endpoints,
+		Endpoints:   ep.Endpoints,
+		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		ep.logger.Error("failed to create etcd client", zap.Error(err))
 		return err
 	}
+
 	ep.client = cli
 	return nil
 }
 
 func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, error) {
-	upstreams := make([]*reverseproxy.Upstream, 0, 1)
+	ctx, cancel := ep.getContext()
+	defer cancel()
 
-	resp, err := ep.client.Get(context.Background(), ep.Key, clientV3.WithPrefix())
+	kv := clientV3.NewKV(ep.client)
+
+	resp, err := kv.Get(ctx, ep.Key, clientV3.WithPrefix())
 	if err != nil {
 		ep.logger.Error("failed to get key from etcd", zap.Error(err))
 		return nil, err
 	}
-	ep.logger.Info("got backends from etcd", zap.Any("resp", resp))
 
+	upstreams := make([]*reverseproxy.Upstream, 0, 1)
 	for _, kv := range resp.Kvs {
+		ep.logger.Info("got key from etcd", zap.String("key", string(kv.Key)), zap.String("value", string(kv.Value)))
+
+		if ep.Version != "" {
+			version := gjson.GetBytes(kv.Value, "version").String()
+			if version != ep.Version {
+				continue
+			}
+		}
+
 		endpoints := gjson.GetBytes(kv.Value, "endpoints").Array()
 		for _, endpoint := range endpoints {
 			dial := endpoint.String()
@@ -83,14 +100,40 @@ func (ep *EtcdProxy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			switch d.Val() {
 			case "endpoints":
 				ep.Endpoints = d.RemainingArgs()
+				if len(ep.Endpoints) == 0 {
+					return d.ArgErr()
+				}
 			case "key":
 				if !d.Args(&ep.Key) {
 					return d.ArgErr()
 				}
+			case "version":
+				if !d.Args(&ep.Version) {
+					return d.ArgErr()
+				}
+			case "timeout":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				val, err := caddy.ParseDuration(d.Val())
+				if err != nil {
+					return err
+				}
+				ep.Timeout = caddy.Duration(val)
+			default:
+				return d.Errf("unrecognized subdirective '%s'", d.Val())
 			}
 		}
 	}
 	return nil
+}
+
+// getContext
+func (ep *EtcdProxy) getContext() (context.Context, context.CancelFunc) {
+	if ep.Timeout > 0 {
+		return context.WithTimeout(ep.ctx, time.Duration(ep.Timeout))
+	}
+	return context.WithCancel(ep.ctx)
 }
 
 var (
