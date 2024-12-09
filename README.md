@@ -15,8 +15,8 @@ This module implements reverse_proxy upstreams from etcd
        dynamic etcd {
             endpoints http://localhost:2379
             key /services/my-service/backends
-			version_key /services/my-service/backends.version
-			timeout 5s
+            version_key /services/my-service/backends.version
+            timeout 5s
         }
         lb_policy least_conn
     }
