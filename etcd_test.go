@@ -12,15 +12,15 @@ import (
 )
 
 func TestDefault(t *testing.T) {
-	endpoints := []string{"http://192.168.31.200:2379"}
+	endpoints := []string{"http://127.0.0.1:2379"}
 	key := "/buoy/buoy.core"
-	version := "1.0.0"
+	versionKey := "/buoy/buoy.core.version"
 	config := fmt.Sprintf(`etcd {
             endpoints %s
             key %s
-			version %s
+			version_key %s
 			timeout 5s
-        }`, strings.Join(endpoints, " "), key, version)
+        }`, strings.Join(endpoints, " "), key, versionKey)
 
 	d := caddyfile.NewTestDispenser(config)
 
@@ -39,8 +39,8 @@ func TestDefault(t *testing.T) {
 		t.Errorf("expected key to be %q, got %q", key, r.Key)
 	}
 
-	if r.Version != version {
-		t.Errorf("expected version to be %q, got %q", version, r.Version)
+	if r.VersionKey != versionKey {
+		t.Errorf("expected version to be %q, got %q", versionKey, r.VersionKey)
 	}
 
 	if r.Timeout != caddy.Duration(5*time.Second) {

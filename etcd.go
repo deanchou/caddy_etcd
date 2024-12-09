@@ -20,10 +20,10 @@ func init() {
 
 // EtcdProxy is a Caddy module that integrates etcd with reverse_proxy.
 type EtcdProxy struct {
-	Endpoints []string       `json:"endpoints,omitempty"`
-	Key       string         `json:"key,omitempty"`
-	Version   string         `json:"version,omitempty"`
-	Timeout   caddy.Duration `json:"timeout,omitempty"`
+	Endpoints  []string       `json:"endpoints,omitempty"`
+	Key        string         `json:"key,omitempty"`
+	VersionKey string         `json:"version_key,omitempty"`
+	Timeout    caddy.Duration `json:"timeout,omitempty"`
 
 	client *clientV3.Client
 	ctx    caddy.Context
@@ -43,6 +43,10 @@ func (ep *EtcdProxy) Provision(ctx caddy.Context) error {
 	ep.ctx = ctx
 	ep.logger = ctx.Logger(ep)
 
+	if ep.VersionKey == "" {
+		ep.VersionKey = ep.Key + ".version"
+	}
+
 	cli, err := clientV3.New(clientV3.Config{
 		Endpoints:   ep.Endpoints,
 		DialTimeout: 5 * time.Second,
@@ -60,7 +64,22 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 	ctx, cancel := ep.getContext()
 	defer cancel()
 
+	var version string
+
 	kv := clientV3.NewKV(ep.client)
+
+	if ep.VersionKey == "" {
+		resp, err := kv.Get(ctx, ep.VersionKey)
+		if err != nil {
+			ep.logger.Error("failed to get key from etcd", zap.Error(err))
+			return nil, err
+		}
+
+		if len(resp.Kvs) > 0 {
+			version = string(resp.Kvs[0].Value)
+		}
+
+	}
 
 	resp, err := kv.Get(ctx, ep.Key, clientV3.WithPrefix())
 	if err != nil {
@@ -72,9 +91,9 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 	for _, kv := range resp.Kvs {
 		ep.logger.Info("got key from etcd", zap.String("key", string(kv.Key)), zap.String("value", string(kv.Value)))
 
-		if ep.Version != "" {
-			version := gjson.GetBytes(kv.Value, "version").String()
-			if version != ep.Version {
+		if version != "" {
+			v := gjson.GetBytes(kv.Value, "version").String()
+			if version != v {
 				continue
 			}
 		}
@@ -107,8 +126,8 @@ func (ep *EtcdProxy) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				if !d.Args(&ep.Key) {
 					return d.ArgErr()
 				}
-			case "version":
-				if !d.Args(&ep.Version) {
+			case "version_key":
+				if !d.Args(&ep.VersionKey) {
 					return d.ArgErr()
 				}
 			case "timeout":
