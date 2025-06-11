@@ -68,7 +68,7 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 
 	kv := clientV3.NewKV(ep.client)
 
-	if ep.VersionKey == "" {
+	if ep.VersionKey != "" {
 		resp, err := kv.Get(ctx, ep.VersionKey)
 		if err != nil {
 			ep.logger.Error("failed to get key from etcd", zap.Error(err))
@@ -78,7 +78,6 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 		if len(resp.Kvs) > 0 {
 			version = string(resp.Kvs[0].Value)
 		}
-
 	}
 
 	resp, err := kv.Get(ctx, ep.Key, clientV3.WithPrefix())
