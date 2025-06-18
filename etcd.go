@@ -66,9 +66,9 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 
 	var version string
 
-	kv := clientV3.NewKV(ep.client)
+	kv := ep.client
 
-	if ep.VersionKey != "" {
+	if ep.VersionKey != "" && ep.VersionKey != ep.Key {
 		resp, err := kv.Get(ctx, ep.VersionKey)
 		if err != nil {
 			ep.logger.Error("failed to get key from etcd", zap.Error(err))
@@ -88,7 +88,7 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 
 	upstreams := make([]*reverseproxy.Upstream, 0, 1)
 	for _, kv := range resp.Kvs {
-		ep.logger.Info("got key from etcd", zap.String("key", string(kv.Key)), zap.String("value", string(kv.Value)))
+		ep.logger.Debug("got key from etcd", zap.String("key", string(kv.Key)))
 
 		if version != "" {
 			v := gjson.GetBytes(kv.Value, "version").String()
@@ -100,13 +100,15 @@ func (ep *EtcdProxy) GetUpstreams(r *http.Request) ([]*reverseproxy.Upstream, er
 		endpoints := gjson.GetBytes(kv.Value, "endpoints").Array()
 		for _, endpoint := range endpoints {
 			dial := endpoint.String()
-			dial = dial[strings.Index(dial, "://")+3:]
+			if idx := strings.Index(dial, "://"); idx != -1 {
+				dial = dial[idx+3:]
+			}
 			upstreams = append(upstreams, &reverseproxy.Upstream{
 				Dial: dial,
 			})
 		}
 	}
-	ep.logger.Info("got upstreams from etcd", zap.Any("upstreams", upstreams))
+	ep.logger.Debug("got upstreams from etcd", zap.Any("upstreams", upstreams))
 
 	return upstreams, nil
 }
